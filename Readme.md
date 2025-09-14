@@ -2,7 +2,9 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python)](https://www.python.org/) [![Selenium](https://img.shields.io/badge/Selenium-4-green?style=for-the-badge&logo=selenium)](https://www.selenium.dev/) [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models-yellow?style=for-the-badge)](https://huggingface.co/models) [![Notion API](https://img.shields.io/badge/Notion%20API-v1-black?style=for-the-badge&logo=notion)](https://developers.notion.com/)
 
-**일본의 주요 커뮤니티(5ch, Shitaraba)에 흩어져 있는 유저 반응을 자동으로 수집하고, AI를 통해 텍스트의 감성을 5단계로 정량 분석하며, 핵심 키워드를 추출하여 최종 결과를 Notion 대시보드에 실시간으로 업데이트하는 완전 자동화 데이터 파이프라인입니다.**
+**서비스 운영의 주요 업무 중 모니터링을 자동화하여 일본의 주요 커뮤니티(5ch, したらば)에 흩어져 있는 유저 반응을 자동으로 수집하고, AI를 통해 텍스트의 감성을 5단계로 정량 분석하며, 핵심 키워드를 추출하여 최종 결과를 Notion 대시보드에 실시간으로 업데이트하는 완전 자동화 데이터 파이프라인입니다.**
+- 5ch Maplestoryスレ, したらば의 채널별晒しスレ를 통해 공식 홈페이지 및 트위터에서는 공개되지 않는 유저들의 이면을 확인, 메루의 현금 거래/악성 이용 유저 파악 및 트래킹 
+- 기타 건의 사항, 밸런스 패치 요구 등 일반적인 의견도 확인 가능
 
 <br>
 
@@ -16,7 +18,7 @@
 
 -   **지능형 스레드 탐색:** 고정 URL이 아닌, 검색 결과 및 목록 페이지를 분석하여 항상 최신 게시판 스레드를 자동으로 찾아냅니다.
 -   **다중 사이트 동시 크롤링:** `Selenium`을 활용하여 구조가 다른 5ch와 Shitaraba의 동적 웹 페이지 데이터를 안정적으로 수집합니다.
--   **AI 기반 5단계 감성 분석:** `Hugging Face`의 일본어 특화 BERT 모델을 사용하여, 각 게시글의 뉘앙스를 **매우 긍정/긍정/중립/부정/매우 부정**의 5단계로 정밀하게 분류합니다.
+-   **AI 기반 5단계 감성 분석:** `Hugging Face`의 일본어 특화 BERT 모델을 사용하여, 각 게시글의 뉘앙스를 **Very Positive/Positive/Neutral/Negative/Very Negative**의 5단계 분류 + 분류 불가 **"exception"**로 태깅합니다.
 -   **동적 키워드 추출:** `keywords.xlsx` 파일을 통해 관리되는 키워드 목록을 기반으로, 각 게시글의 주요 주제를 동적으로 태깅합니다.
 -   **실시간 Notion 대시보드:** **Notion API**와 연동하여, 모든 수집 및 분석 결과를 지정된 데이터베이스에 자동으로 업데이트하여 시각적인 결과 확인 및 팀 공유가 가능합니다.
 
