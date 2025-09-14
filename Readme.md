@@ -13,7 +13,7 @@
 
 ## 🌟 라이브 데모 (Live Demo)
 
-**[➡️ 본 URL을 통해 실시간 분석 대시보드를 확인이 가능합니다](https://vlage.notion.site/26dc0c2b3ce780b5b934e8d25a387c9c?v=26dc0c2b3ce7804c86fa000c1c0bfb13)**
+**[➡️ 본 URL을 통해 실시간 Notion 분석 대시보드 확인이 가능합니다](https://vlage.notion.site/26dc0c2b3ce780b5b934e8d25a387c9c?v=26dc0c2b3ce7804c86fa000c1c0bfb13)**
 
 <br>
 
