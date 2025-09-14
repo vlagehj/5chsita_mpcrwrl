@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# IDE / OS specific
+.vscode/
+.idea/
+.DS_Store
