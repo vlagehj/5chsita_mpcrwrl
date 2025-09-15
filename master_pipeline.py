@@ -3,6 +3,7 @@
 # ===================================================================
 
 import sqlite3, time, re, pandas as pd, datetime
+import os
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -11,7 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException
-from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM
 from notion_client import Client
 
 import torch
@@ -26,18 +27,21 @@ print("="*50)
 FIVCH_SEARCH_URL = "https://ff5ch.syoboi.jp/?q=Maple+Story"
 SHITARABA_SUBJECT_URL = "https://jbbs.shitaraba.net/bbs/subject.cgi/netgame/14987/"
 SHITARABA_TARGET_KEYWORDS = ["かえで晒しスレ", "ゆかり晒しスレ", "くるみ晒しスレ"]
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DB_NAME = 'game_community_data_COMBINED.db' # ★★★ 통합 DB 이름 ★★★
+DB_NAME = 'game_community_data_COMBINED.db' # ★★★ 통합 DB 이름 
+DB_PATH = os.path.join(SCRIPT_DIR, DB_NAME)
+KEYWORD_FILE_PATH = os.path.join(SCRIPT_DIR, 'keywords.xlsx')
 GAME_TITLE = 'MapleStory'
 MODEL_NAME = "koheiduck/bert-japanese-finetuned-sentiment"
-NOTION_API_KEY = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # ★★★ 본인의 Notion 통합 API 키로 교체 ★★★
-NOTION_DATABASE_ID = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # ★★★ 본인의 Notion 데이터베이스 ID로 교체 ★★★
+NOTION_API_KEY = "secret_xxxxxxxxxxxxxxxxxxxxx"   # ★★★ 본인의 Notion 통합 API 키로 교체 ★★★
+NOTION_DATABASE_ID = "secret_xxxxxxxxxxxxxxxxxxxxx" # ★★★ 본인의 Notion 데이터베이스 ID로 교체 ★★★
 KEYWORD_FILE = 'keywords.xlsx'
 
 # --- 함수 정의 ---
 
 def load_keywords_from_excel(file_path):
-    # ... (이전과 동일)
+
     print(f"'{file_path}'에서 키워드 목록을 불러옵니다...")
     try:
         df = pd.read_excel(file_path, header=0, dtype=str)
@@ -96,7 +100,6 @@ def crawl_5ch(driver, conn):
 
 
 # ★★★ 시타라바 크롤링 전용 모듈 ★★★
-# ★★★ 시타라바 크롤링 전용 모듈 (ID 추출 버그 수정) ★★★
 def crawl_shitaraba(driver, conn):
     print("\n--- [시타라바 크롤링 모듈 시작] ---")
     cur = conn.cursor()
@@ -139,7 +142,6 @@ def crawl_shitaraba(driver, conn):
             for i in range(1, min(len(dts), len(dds))): # 1번 원글은 제외
                 dt, dd = dts[i], dds[i]
                 
-                # ★★★ 핵심 수정: 이제 <b> 태그가 아닌 <dt> 태그의 id 속성에서 게시글 번호를 직접 가져옵니다. ★★★
                 post_num = dt.get('id', 'comment_N/A').replace('comment_', '')
                 unique_post_id = f"stb-{thread_id}-{post_num}"
                 
@@ -160,14 +162,16 @@ def crawl_shitaraba(driver, conn):
 # ★★★ 통합 데이터 수집 함수 (Orchestrator) ★★★
 def run_crawling_and_storage():
     print("="*30 + "\n1단계: 통합 데이터 수집 및 저장을 시작합니다.\n" + "="*30)
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute('''
         CREATE TABLE IF NOT EXISTS posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_site TEXT, game_title TEXT,
-            post_id TEXT UNIQUE, content TEXT, sentiment TEXT,
-            sentiment_score REAL, keywords TEXT, source_url TEXT,
+            post_id TEXT UNIQUE, content TEXT, 
+            content_kr TEXT,
+            sentiment TEXT, sentiment_score REAL, 
+            keywords TEXT, source_url TEXT,
             written_time TEXT
         )
     ''')
@@ -197,7 +201,7 @@ def run_sentiment_analysis():
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
     sentiment_analyzer = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row 
     cur = conn.cursor()
     cur.execute("SELECT id, content FROM posts WHERE sentiment IS NULL")
@@ -229,7 +233,7 @@ def run_sentiment_analysis():
 def run_keyword_extraction(keywords_list):
     """키워드 추출"""
     print("\n" + "="*30 + "\n3단계: 고유 명사 키워드 추출을 시작합니다.\n" + "="*30)
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row 
     cur = conn.cursor()
     cur.execute("SELECT id, content FROM posts WHERE keywords IS NULL")
@@ -245,11 +249,78 @@ def run_keyword_extraction(keywords_list):
     conn.close()
     print("3단계 완료!")
 
-# ★★★ Notion 업데이트 함수 (Source 속성 추가) ★★★
+def run_translation():
+    print("\n" + "="*30 + "\n4단계: AI 번역을 시작합니다. (게시글 수에 따라 매우 오래 걸릴 수 있습니다)\n" + "="*30)
+        
+    TRANSLATION_MODEL = "trillionlabs/Tri-1.8B-Translation"
+        
+    print(f"'{TRANSLATION_MODEL}' 생성형 번역 모델을 로딩합니다...")
+        
+    try:
+        # ★★★ device_map="auto"를 사용하여 accelerate가 자동으로 장치를 할당하도록 합니다. ★★★
+           tokenizer = AutoTokenizer.from_pretrained(TRANSLATION_MODEL)
+           model = AutoModelForCausalLM.from_pretrained(TRANSLATION_MODEL, device_map="auto", dtype=torch.bfloat16)
+           print("모델 로딩 완료!")
+    except Exception as e:
+            print(f"번역 모델 로딩 실패: {e}")
+            return
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row 
+    cur = conn.cursor()
+    cur.execute("SELECT id, content FROM posts WHERE content_kr IS NULL AND content IS NOT NULL")
+    rows_to_translate = cur.fetchall()
+    
+    print(f"총 {len(rows_to_translate)}개의 신규 게시글에 대한 번역을 시작합니다.")
+    
+    for row in rows_to_translate:
+        post_id, content = row['id'], row['content']
+        truncated_content = content[:300] # 입력 길이를 적절히 조절
+        
+        ## ★★★ 프롬프트 설계 ★★★ << 이 프로젝트의 핵심입니다. 프롬프트를 입력하여 커스터마이징이 가능합니다.
+        prompt = f"""Translate the following Japanese MapleStory Game Community user's text into Korean:{truncated_content} <ko>"""
+        
+        messages = [
+            {"role": "system", "content": "You are an expert translator specializing in the gaming community, especially MapleStory. You are fluent in the slang and nuances of both Japanese and Korean gamers. Your task is to translate Japanese text into natural, modern Korean that a Korean gamer would actually use."},
+            {"role": "user", "content": prompt}
+        ]
+
+        try:
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            # 토크나이저를 사용하여 모델이 이해할 수 있는 입력값으로 변환합니다.
+            inputs = tokenizer.apply_chat_template(
+                messages, 
+                return_tensors="pt",
+                add_generation_prompt=True
+            ).to(model.device)
+
+            # 모델을 통해 새로운 텍스트를 생성(번역)합니다.
+            outputs = model.generate(
+                inputs,
+                max_new_tokens=512,
+                do_sample=True,
+                temperature=0.7,
+                pad_token_id=tokenizer.eos_token_id
+            )
+            
+            # 공식 문서의 방법대로, 프롬프트를 제외한 순수 번역 결과만 정확하게 추출합니다.
+            translated_text = tokenizer.decode(outputs[0][len(inputs[0]):], skip_special_tokens=True)
+
+            cur.execute("UPDATE posts SET content_kr = ? WHERE id = ?", (translated_text, post_id))
+            print(f"[ID: {post_id}] 번역 완료.")
+        except Exception as e:
+            print(f"[ID: {post_id}] 번역 중 오류 발생: {e}")
+
+    conn.commit()
+    conn.close()
+    print("4단계 완료!")
+
+# ★★★ Notion 업데이트 함수  ★★★
 def update_notion_database():
     print("\n" + "="*30 + "\n4단계: Notion 데이터베이스 업데이트를 시작합니다.\n" + "="*30)
     notion = Client(auth=NOTION_API_KEY)
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row 
     cur = conn.cursor()
 
@@ -274,13 +345,14 @@ def update_notion_database():
     FAILURE_LIMIT = 5
 
     for post in new_posts:
-        # ... (page_properties 만드는 부분은 이전과 동일)
+        
         page_properties = {
             "Post_ID": {"title": [{"text": {"content": str(post['post_id'])}}]},
             "Sentiment": {"select": {"name": str(post['sentiment'])}},
             "Score": {"number": round(post['sentiment_score'], 4)},
             "URL": {"url": str(post['source_url'])},
             "Content": {"rich_text": [{"text": {"content": str(post['content'])[:2000]}}]},
+            "Content_KR": {"rich_text": [{"text": {"content": str(post['content_kr'])[:2000]}}]},        
             "Source": {"select": {"name": str(post['source_site'])}}
         }
         if post['keywords']:
@@ -314,7 +386,7 @@ def update_notion_database():
             break  # for 루프를 탈출하여 함수를 안전하게 종료
 
     conn.close()
-    print("4단계 완료!")
+    print("5단계 완료!")
 
 # --- 메인 파이프라인 실행 ---
 if __name__ == "__main__":
@@ -323,9 +395,19 @@ if __name__ == "__main__":
     # 0단계: 엑셀에서 키워드 불러오기
     maple_keywords = load_keywords_from_excel(KEYWORD_FILE)
     
+    # 1단계: 5ch + 시타라바 크롤링 및 DB 저장
     run_crawling_and_storage()
+    
+    # 2단계: AI 감성 분석
     run_sentiment_analysis()
+
+    # 3단계: 키워드 추출
     run_keyword_extraction(maple_keywords)
+
+    # 4단계: AI KOJA 번역
+    run_translation()
+
+    # 5단계: Notion 업데이트
     update_notion_database()
     
     end_time = time.time()
