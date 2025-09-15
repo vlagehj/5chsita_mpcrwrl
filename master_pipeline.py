@@ -14,16 +14,24 @@ from selenium.common.exceptions import TimeoutException
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from notion_client import Client
 
+import torch
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+print("="*50)
+print(f"사용할 연산 장치: {DEVICE.upper()}")
+if DEVICE == 'cpu':
+    print("경고: CUDA 지원 GPU가 감지되지 않았습니다. AI 분석이 CPU로 진행됩니다.")
+print("="*50)
+
 # --- 통합 설정 ---
 FIVCH_SEARCH_URL = "https://ff5ch.syoboi.jp/?q=Maple+Story"
 SHITARABA_SUBJECT_URL = "https://jbbs.shitaraba.net/bbs/subject.cgi/netgame/14987/"
 SHITARABA_TARGET_KEYWORDS = ["かえで晒しスレ", "ゆかり晒しスレ", "くるみ晒しスレ"]
 
-DB_NAME = 'game_community_data_COMBINED.db' # ★★★ 새로운 통합 DB 이름 ★★★
+DB_NAME = 'game_community_data_COMBINED.db' # ★★★ 통합 DB 이름 ★★★
 GAME_TITLE = 'MapleStory'
 MODEL_NAME = "koheiduck/bert-japanese-finetuned-sentiment"
-NOTION_API_KEY = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # ★★★ 본인의 Notion 통합 API 키로 교체 ★★★
-NOTION_DATABASE_ID = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # ★★★ 본인의 Notion 데이터베이스 ID로 교체 ★★★
+NOTION_API_KEY = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"   # ★★★ 본인의 Notion 통합 API 키로 교체 ★★★
+NOTION_DATABASE_ID = "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" # ★★★ 본인의 Notion 데이터베이스 ID로 교체 ★★★
 KEYWORD_FILE = 'keywords.xlsx'
 
 # --- 함수 정의 ---
@@ -165,8 +173,14 @@ def run_crawling_and_storage():
     ''')
     conn.commit()
     
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-gpu")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
+
     service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service)
+    driver = webdriver.Chrome(service=service, options=options)
     
     try:
         crawl_5ch(driver, conn)
@@ -179,6 +193,7 @@ def run_crawling_and_storage():
 def run_sentiment_analysis():
     """AI 감성 분석"""
     print("\n" + "="*30 + "\n2단계: AI 감성 분석을 시작합니다.\n" + "="*30)
+    device_index = 0 if DEVICE == 'cuda' else -1
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
     sentiment_analyzer = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
@@ -188,6 +203,7 @@ def run_sentiment_analysis():
     cur.execute("SELECT id, content FROM posts WHERE sentiment IS NULL")
     rows_to_analyze = cur.fetchall()
     print(f"총 {len(rows_to_analyze)}개의 신규 게시글에 대한 감성 분석을 시작합니다.")
+    
     for row in rows_to_analyze:
         post_id, content = row['id'], row['content']
         final_sentiment, final_score = 'Exception', 0.0
@@ -209,7 +225,6 @@ def run_sentiment_analysis():
         cur.execute("UPDATE posts SET sentiment = ?, sentiment_score = ? WHERE id = ?", (final_sentiment, final_score, post_id))
     conn.commit()
     conn.close()
-    print("2단계 완료!")
 
 def run_keyword_extraction(keywords_list):
     """키워드 추출"""
