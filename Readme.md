@@ -1,4 +1,4 @@
-# 일본 메이플스토리 커뮤니티 모니터링 자동화 스크립트 For 25' NEXON TUTORIAL
+# 일본 메이플스토리 커뮤니티 모니터링 자동화 스크립트
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?style=for-the-badge&logo=python)](https://www.python.org/) [![Selenium](https://img.shields.io/badge/Selenium-4-green?style=for-the-badge&logo=selenium)](https://www.selenium.dev/) [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Models-yellow?style=for-the-badge)](https://huggingface.co/models) [![Notion API](https://img.shields.io/badge/Notion%20API-v1-black?style=for-the-badge&logo=notion)](https://developers.notion.com/)
 
